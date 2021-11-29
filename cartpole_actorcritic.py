@@ -1,7 +1,7 @@
 import numpy as np
 np.set_printoptions(precision=4, suppress=True)
 import matplotlib.pyplot as plt
-# import random
+import random
 import sys
 
 # import gym
@@ -113,7 +113,7 @@ def normalize(x, x_dot, theta, theta_dot, cosineflag=True):
 
     return  x, x_dot, theta, theta_dot
 
-def fourier(x, x_dot, theta, theta_dot, cosineflag=True): #4M+1 features
+def fourier(x, x_dot, theta, theta_dot, cosineflag=False): #4M+1 features
     #normalize
     x, x_dot, theta, theta_dot = normalize(x, x_dot, theta, theta_dot, cosineflag)
     phi = [1]
@@ -147,11 +147,10 @@ def softmax_action(policy_params, x, x_dot, theta, theta_dot):
     # print(policy_exp, x, x_dot, theta, theta_dot)
     return policy_exp #(2, )
 
-
-def REINFORCE(alpha_w, alpha_theta, algo_type='without_baseline', gamma=1.0):
+def ACTOR_CRITIC(alpha_w, alpha_theta, gamma=1.0):
     policy_params = np.random.normal(0, 0.1, (4*M+1,len(action_set))) #np.ones((4*M+1,len(action_set)))*(-0.01)
     value_params = np.ones(4*M+1)*0.01
-    episode_length = []
+    episode_length, avg_return = [], []
 
     for iter in range(5000):
         policy_params_temp = policy_params.copy()
@@ -162,7 +161,7 @@ def REINFORCE(alpha_w, alpha_theta, algo_type='without_baseline', gamma=1.0):
         x_dot  = np.random.uniform(start_range[0], start_range[1])
         theta_dot = np.random.uniform(start_range[0], start_range[1])
         step = 1
-        state_list, action_list, reward_list = [], [], []
+        _return = 0
         
         # #using gym
         # x, x_dot, theta, theta_dot = env.reset() 
@@ -170,7 +169,7 @@ def REINFORCE(alpha_w, alpha_theta, algo_type='without_baseline', gamma=1.0):
         #run epsidoe
         while not is_terminating(x, x_dot, theta, theta_dot, step):
             #choose action
-            curr_action = np.argmax(softmax_action(policy_params, x, x_dot, theta, theta_dot))
+            curr_action = random.choices(action_set, softmax_action(policy_params, x, x_dot, theta, theta_dot))
 
             # #using gym
             # observation, curr_reward, done, info = env.step(curr_action)
@@ -180,37 +179,19 @@ def REINFORCE(alpha_w, alpha_theta, algo_type='without_baseline', gamma=1.0):
             next_x, next_x_dot, next_theta, mext_theta_dot = transition(curr_action, x, x_dot, theta, theta_dot)
             #reward
             curr_reward = reward(next_x, next_x_dot, next_theta, mext_theta_dot, step)
+            _return += curr_reward*gamma**(step-1)
             step += 1
-            state_list.append([x, x_dot, theta, theta_dot])
-            action_list.append(curr_action)
-            reward_list.append(curr_reward)
-            x, x_dot, theta, theta_dot = next_x, next_x_dot, next_theta, mext_theta_dot
+            print(x, x_dot, theta, theta_dot, curr_action, softmax_action(policy_params, x, x_dot, theta, theta_dot))
 
-        print(np.array(state_list))
-        print(action_list)
-        print("\n EPISODE LENGTH: ",len(reward_list), "CURR ITER: ", iter)
-        
-        #n step return
-        return_list = np.zeros(len(reward_list))
-        return_list[-1] = reward_list[-1]
-        T = len(reward_list)
-        for i in range(T-2, -1, -1):
-            return_list[i] = reward_list[i] + gamma*return_list[i+1]
-        episode_length.append(return_list[0]) #to plot avg return ~= episode length
-
-        #loop through episode
-        for t in range(T):
-            x, x_dot, theta, theta_dot = state_list[t]
-            curr_action = action_list[t]
-            phi_s = fourier(x, x_dot, theta, theta_dot) #state feature representation
-
-            if algo_type =='without_baseline':
-                delta = return_list[t]
-            elif algo_type == 'with_baseline':
-                val_w_s = np.dot(value_params,phi_s)
-                delta = return_list[t] - val_w_s
-
-            #policy params update
+            phi_s = fourier(x, x_dot, theta, theta_dot)
+            phi_next_s = fourier(next_x, next_x_dot, next_theta, mext_theta_dot)
+            if not is_terminating(next_x, next_x_dot, next_theta, mext_theta_dot, step):
+                delta = curr_reward +gamma*np.dot(phi_next_s, value_params) - np.dot(phi_s, value_params)
+            else:
+                delta = curr_reward - np.dot(phi_s, value_params)
+            #update value params
+            value_params += alpha_w*delta*phi_s
+            #update policy params
             policy = softmax_action(policy_params, x, x_dot, theta, theta_dot)
             if curr_action == 0:
                 policy_params[:,0] += alpha_theta*delta*(1-policy[0])*phi_s
@@ -219,26 +200,26 @@ def REINFORCE(alpha_w, alpha_theta, algo_type='without_baseline', gamma=1.0):
             if curr_action == 1:
                 policy_params[:,0] += alpha_theta*delta*(-policy[1])*phi_s
                 policy_params[:,1] += alpha_theta*delta*(1-policy[1])*phi_s
-                # print(curr_action, delta, policy)
 
-            #value params update
-            if algo_type == 'with_baseline':
-                value_params += alpha_w*delta*phi_s
-                    
-        if np.mean(episode_length[max(0, iter-100): iter+1]) > 195.0:
+            x, x_dot, theta, theta_dot = next_x, next_x_dot, next_theta, mext_theta_dot
+
+        episode_length.append(step)
+        avg_return.append(_return)
+        
+        print("\n EPISODE LENGTH: ",step, "CURR ITER: ", iter)
+        if np.mean(avg_return[max(0, iter-100): iter+1]) > 195.0:
             print("Hooray... solved")
             break
         max_diff = np.max(np.abs(policy_params_temp - policy_params))
         print(" Max diff: ",max_diff)
-        if max_diff/alpha_theta < 0.1: # 0.001 works with 1e-6 policy_step
+        if max_diff/alpha_theta < 0.001: # 0.001 works with 1e-6 policy_step
             break
 
     plt.figure()
-    plt.plot(np.arange(len(episode_length)), episode_length)
+    plt.plot(np.arange(len(avg_return)), avg_return)
     plt.xlabel('Iterations')
     plt.ylabel('Avg. return')
-    # plt.ylim([-100, 1000])
-    plt.savefig('graph_cartpole_reinforce_'+str(algo_type))
+    plt.savefig('graph_cartpole_actorcritic')
 
-alpha_w, alpha_theta = 1e-7, 1e-3
-REINFORCE(alpha_w, alpha_theta, 'without_baseline')
+alpha_w, alpha_theta = 1e-7, 5e-4
+ACTOR_CRITIC(alpha_w, alpha_theta)
