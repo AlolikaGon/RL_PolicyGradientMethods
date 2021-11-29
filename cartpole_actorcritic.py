@@ -148,7 +148,7 @@ def softmax_action(policy_params, x, x_dot, theta, theta_dot):
     return policy_exp #(2, )
 
 def ACTOR_CRITIC(alpha_w, alpha_theta, gamma=1.0):
-    policy_params = np.random.normal(0, 0.1, (4*M+1,len(action_set))) #np.ones((4*M+1,len(action_set)))*(-0.01)
+    policy_params = 0.01*np.random.normal(0, 0.1, (4*M+1,len(action_set))) #np.ones((4*M+1,len(action_set)))*(-0.01)
     value_params = np.ones(4*M+1)*0.01
     episode_length, avg_return = [], []
 
@@ -169,7 +169,7 @@ def ACTOR_CRITIC(alpha_w, alpha_theta, gamma=1.0):
         #run epsidoe
         while not is_terminating(x, x_dot, theta, theta_dot, step):
             #choose action
-            curr_action = random.choices(action_set, softmax_action(policy_params, x, x_dot, theta, theta_dot))
+            curr_action = random.choices(action_set, softmax_action(policy_params, x, x_dot, theta, theta_dot))[0]
 
             # #using gym
             # observation, curr_reward, done, info = env.step(curr_action)
@@ -200,7 +200,7 @@ def ACTOR_CRITIC(alpha_w, alpha_theta, gamma=1.0):
             if curr_action == 1:
                 policy_params[:,0] += alpha_theta*delta*(-policy[1])*phi_s
                 policy_params[:,1] += alpha_theta*delta*(1-policy[1])*phi_s
-
+            print(curr_action, delta, policy)
             x, x_dot, theta, theta_dot = next_x, next_x_dot, next_theta, mext_theta_dot
 
         episode_length.append(step)
@@ -221,5 +221,5 @@ def ACTOR_CRITIC(alpha_w, alpha_theta, gamma=1.0):
     plt.ylabel('Avg. return')
     plt.savefig('graph_cartpole_actorcritic')
 
-alpha_w, alpha_theta = 1e-7, 5e-4
+alpha_w, alpha_theta = 1e-7, 5e-3
 ACTOR_CRITIC(alpha_w, alpha_theta)
