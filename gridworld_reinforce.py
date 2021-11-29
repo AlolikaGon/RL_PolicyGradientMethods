@@ -59,16 +59,16 @@ def softmax_select(theta, phi, state_idx):
     
 
 def runEpisode(theta, phi):
-    curr_state = random.choices(initial_states)[0]
+    curr_state = random.choices(initial_states)[0] #[row, col]
     state_list, action_list, reward_list = [], [], []
     timestep = 0
     while curr_state not in terminal_states:# and timestep < 10000:
         state_idx = (max_r+1)*curr_state[0] + curr_state[1]
         action_idx = np.argmax(softmax_select(theta, phi, state_idx))
-        curr_action = list(action_set.keys())[action_idx]
+        curr_action = list(action_set.keys())[action_idx] #\in {Au, AL, AR, AD}
         
-        possible_next_states = transition_function(curr_state[0], curr_state[1], curr_action)
-        next_state = random.choices([[s[0], s[1]] for s in possible_next_states], [s[2] for s in possible_next_states])[0]
+        possible_next_states = transition_function(curr_state[0], curr_state[1], curr_action) #next states with prob
+        next_state = random.choices([[s[0], s[1]] for s in possible_next_states], [s[2] for s in possible_next_states])[0] #sample according to prob
         curr_reward = reward(next_state)
         # print(curr_state, curr_action, curr_reward, next_state)
         state_list.append(curr_state)
@@ -93,25 +93,30 @@ def REINFORCE(gamma, alpha_w, alpha_theta, algo_type = 'without_baseline'):
     phi = np.zeros((total_states, total_states))
     np.fill_diagonal(phi, 1.0)
     epsiodes_graph = []
-    threshold = 0.9
+    threshold = 0.1
     
     for iter in range(2000):
+
+
         state_list, action_list, reward_list = runEpisode(theta, phi)
         T = len(reward_list)
-        # if iter%100==0:
         print("\n EPISODE LENGTH: ",len(reward_list), "CURR ITER: ", iter)
+
+        #create list of n-steps returns
         return_list = np.zeros(T)
         return_list[-1] = reward_list[-1]
         for t in range(T-2, -1, -1):
             return_list[t] = reward_list[t] + gamma*return_list[t+1]
         epsiodes_graph.append(T)
         T_range = np.arange(T)
-        # np.random.shuffle(T_range)
+        
         theta_temp = theta.copy()
+
+        #loop through epsiode for parameter update
         for t in T_range:
             
             curr_state, curr_action = state_list[t], action_list[t]
-            state_idx = (max_r+1)*curr_state[0] + curr_state[1]
+            state_idx = (max_r+1)*curr_state[0] + curr_state[1] #row_idx*5+col_idx
             action_idx = action_set[curr_action]
             phi_s = phi[state_idx]
             if algo_type == 'without_baseline':
@@ -121,13 +126,13 @@ def REINFORCE(gamma, alpha_w, alpha_theta, algo_type = 'without_baseline'):
             #w update
             #theta update
             
-            policy = softmax_select(theta, phi, state_idx)
+            policy = softmax_select(theta, phi, state_idx) #returns an array of size 4
             for i in range(len(action_set)):
                 if action_idx == i:
                     theta[:, i] += alpha_theta*delta*(1-policy[action_idx])*phi_s
                 else:
                     theta[:, i] += alpha_theta*delta*(-1*policy[action_idx])*phi_s
-            # print(action_idx, delta, policy)
+            print(action_idx, delta, policy)
             
             if algo_type == 'with_baseline':
                 val_w += alpha_w*delta*phi_s

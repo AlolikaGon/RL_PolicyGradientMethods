@@ -69,15 +69,23 @@ def transition(action, x, x_dot, theta, theta_dot):
     temp = (force + polemass_length * theta_dot ** 2 * sintheta) / total_mass
     thetaacc = (gravity * sintheta - costheta * temp) / (length * (4.0 / 3.0 - masspole * costheta ** 2 / total_mass))
     xacc = temp - polemass_length * thetaacc * costheta / total_mass
-
+    
+    #euler
     x = x + tau * x_dot
     x_dot = x_dot + tau * xacc
     theta = theta + tau * theta_dot
     theta_dot = theta_dot + tau * thetaacc
+    
+    #semi euler
+    # x_dot = x_dot + tau * xacc
+    # x = x + tau * x_dot
+    # theta_dot = theta_dot + tau * thetaacc
+    # theta = theta + tau * theta_dot
+
     return x, x_dot, theta, theta_dot
     
 def is_terminating(x, x_dot, theta, theta_dot, step):
-    if x < -terminating_cond[0] or x > terminating_cond[0] or theta < -in_radian(terminating_cond[1]) or theta > in_radian(terminating_cond[1]) or step>terminating_cond[2]:
+    if x <= -terminating_cond[0] or x >= terminating_cond[0] or theta <= -in_radian(terminating_cond[1]) or theta >= in_radian(terminating_cond[1]) or step>=terminating_cond[2]:
         return True
     return False
 
@@ -101,7 +109,7 @@ def normalize(x, x_dot, theta, theta_dot, cosineflag=True):
 
     return  x, x_dot, theta, theta_dot
 
-def fourier(x, x_dot, theta, theta_dot, cosineflag=True):
+def fourier(x, x_dot, theta, theta_dot, cosineflag=True): #4M+1 features
     #normalize
     x, x_dot, theta, theta_dot = normalize(x, x_dot, theta, theta_dot, cosineflag)
     phi = [1]
@@ -136,8 +144,8 @@ def softmax_action(policy_params, x, x_dot, theta, theta_dot):
     return policy_exp #(2, )
 
 
-def REINFORCE(alpha_w, alpha_theta, algo_type='without_baseline', gamma=0.99):
-    policy_params = np.ones((4*M+1,len(action_set)))*0.01
+def REINFORCE(alpha_w, alpha_theta, algo_type='without_baseline', gamma=1.0):
+    policy_params = np.random.normal(0, 0.1, (4*M+1,len(action_set))) #np.ones((4*M+1,len(action_set)))*(-0.01)
     value_params = np.ones(4*M+1)*0.01
     episode_length = []
 
@@ -151,6 +159,8 @@ def REINFORCE(alpha_w, alpha_theta, algo_type='without_baseline', gamma=0.99):
         theta_dot = np.random.uniform(start_range[0], start_range[1])
         step = 1
         state_list, action_list, reward_list = [], [], []
+
+        #run epsidoe
         while not is_terminating(x, x_dot, theta, theta_dot, step):
             #choose action
             curr_action = np.argmax(softmax_action(policy_params, x, x_dot, theta, theta_dot))
@@ -168,25 +178,27 @@ def REINFORCE(alpha_w, alpha_theta, algo_type='without_baseline', gamma=0.99):
         print(action_list)
         print("\n EPISODE LENGTH: ",len(reward_list), "CURR ITER: ", iter)
         
+        #n step return
         return_list = np.zeros(len(reward_list))
         return_list[-1] = reward_list[-1]
         T = len(reward_list)
         for i in range(T-2, -1, -1):
             return_list[i] = reward_list[i] + gamma*return_list[i+1]
-        episode_length.append(return_list[0])
+        episode_length.append(return_list[0]) #to plot avg return ~= episode length
 
         #loop through episode
         for t in range(T):
             x, x_dot, theta, theta_dot = state_list[t]
             curr_action = action_list[t]
-            phi_s = fourier(x, x_dot, theta, theta_dot)
+            phi_s = fourier(x, x_dot, theta, theta_dot) #state feature representation
 
             if algo_type =='without_baseline':
                 delta = return_list[t]
             elif algo_type == 'with_baseline':
                 val_w_s = np.dot(value_params,phi_s)
                 delta = return_list[t] - val_w_s
-            
+
+            #policy params update
             policy = softmax_action(policy_params, x, x_dot, theta, theta_dot)
             if curr_action == 0:
                 policy_params[:,0] += alpha_theta*delta*(1-policy[0])*phi_s
@@ -197,6 +209,7 @@ def REINFORCE(alpha_w, alpha_theta, algo_type='without_baseline', gamma=0.99):
                 policy_params[:,1] += alpha_theta*delta*(1-policy[1])*phi_s
                 # print(curr_action, delta, policy)
 
+            #value params update
             if algo_type == 'with_baseline':
                 value_params += alpha_w*delta*phi_s
                     
@@ -215,5 +228,5 @@ def REINFORCE(alpha_w, alpha_theta, algo_type='without_baseline', gamma=0.99):
     # plt.ylim([-100, 1000])
     plt.savefig('graph_cartpole_reinforce_'+str(algo_type))
 
-alpha_w, alpha_theta = 1e-7, 1e-8
-REINFORCE(alpha_w, alpha_theta, 'with_baseline')
+alpha_w, alpha_theta = 1e-7, 1e-3
+REINFORCE(alpha_w, alpha_theta, 'without_baseline')
