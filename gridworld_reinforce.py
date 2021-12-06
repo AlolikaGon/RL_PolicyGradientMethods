@@ -13,7 +13,7 @@ obstacles = [[2,2], [3,2]]
 obstacle_index = [(max_r+1)*r+c for r, c in obstacles]
 water = [[4,2]]
 initial_states = [[0,0]]# [[i,j] for j in range(max_c+1) for i in range(max_r+1) if [i,j] not in obstacles+terminal_states]
-softmax_sigma=0.1
+softmax_sigma=1.0
 
 print_arrow = {'AU': u'\u2191', 'AR': u'\u2192', 'AL': u'\u2190', 'AD': u'\u2193', 'G': 'G'}
 
